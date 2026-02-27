@@ -211,9 +211,29 @@ TEST_ROUTE_NAME=my-route
 
 ### Manual Cleanup (`tests/clean.spec.ts`)
 
-Run manually when test suite crashes before cleanup:
+This spec is useful for clearing all test entities before or after test runs. **Important:** This file has `.skip` enabled by default.
+
+**First Run Setup:** Remove the `.skip` modifier for the initial test run to ensure no stale services and routes exist:
 
 ```bash
+# Before first test run, remove .skip from clean.spec.ts
+# Then run:
+npx playwright test --grep @cleanup
+```
+
+This ensures a clean slate with no active services or routes from previous runs.
+
+**After Cleanup:** Re-enable `.skip` in the file to prevent accidental deletions during normal test execution:
+
+```bash
+# Normal test runs (cleanup.spec.ts is skipped)
+npx playwright test --grep @cleanup  # This will be skipped
+```
+
+**Manual Cleanup:** If the test suite crashes before cleanup runs:
+
+```bash
+# Temporarily remove .skip and run:
 npx playwright test --grep @cleanup
 ```
 
