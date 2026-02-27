@@ -36,11 +36,6 @@ jobs:
         ports:
           - 8001:8001
           - 8000:8000
-        options: >-
-          --health-cmd="kong health"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
           - 8002:8002
           - 8443:8443
         options: >-
