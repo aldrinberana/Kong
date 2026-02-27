@@ -14,7 +14,7 @@ jobs:
       with:
         node-version: lts/*
     - name: Start Kong services with docker-compose
-      run: docker-compose up -d
+      run: docker compose up -d
     - name: Wait for Kong to be ready
       run: |
         echo "Waiting for Kong Admin API..."
@@ -37,7 +37,7 @@ jobs:
           sleep 2
         done
         echo "Kong Manager UI failed to start"
-        docker-compose logs kong
+        docker compose logs kong
         exit 1
     - name: Install dependencies
       run: npm ci
@@ -61,4 +61,4 @@ jobs:
         retention-days: 30
     - name: Cleanup
       if: always()
-      run: docker-compose down -v
+      run: docker compose down -v
