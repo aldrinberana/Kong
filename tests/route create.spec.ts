@@ -12,7 +12,7 @@ import { test, expect } from '../fixtures/kong.fixtures';
 import { TestData, uniqueSuffix } from '../fixtures/test-data';
 import { trackService, trackRoute } from '../utils/entity-tracker';
 
-test.describe.serial('Route — Create', () => {
+test.describe('Route — Create', () => {
 
   // ── Full UI flow: service + route ──
 
