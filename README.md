@@ -343,39 +343,57 @@ This repository includes an automated GitHub Actions workflow that runs Playwrig
 **What it does:**
 
 1. **Triggers:** Runs on push/pull request to `main` or `master` branches
-2. **Services:** Spins up containerized dependencies:
+2. **Service Deployment:** Uses `docker-compose.yml` to spin up:
    - **PostgreSQL** — Kong's database backend
-   - **Kong Gateway** — The service under test (with Postgres connection)
+   - **Kong Gateway** — The service under test (with automatic database migration)
 3. **Test Execution:**
+   - Waits for Kong Admin API and Manager UI to be ready
    - Installs dependencies (`npm ci`)
    - Installs Playwright browsers (`npx playwright install --with-deps`)
-   - Runs all tests respecting `playwright.config.ts` settings (single worker, serial execution)
-4. **Artifacts:** Uploads test report to GitHub (retained for 30 days)
+   - Runs tests on **Chromium only** (single browser for faster CI)
+   - Respects `playwright.config.ts` settings (single worker, serial execution)
+4. **Artifacts:** Uploads both test report and test results (retained for 30 days)
+5. **Cleanup:** Automatically tears down containers after test completion
 
 **Workflow File Location:** [`.github/workflows/playwright.yml`](.github/workflows/playwright.yml)
 
-**Key Configuration:**
+**Key Steps:**
 
 ```yaml
-services:
-  postgres:
-    image: postgres                    # Kong database
-    env:
-      POSTGRES_USER: kong
-      POSTGRES_PASSWORD: kong
-      KONG_DB: kong
-
-  kong:
-    image: kong/kong-gateway           # Kong service under test
-    env:
-      KONG_DATABASE: postgres          # Use Postgres (not in-memory)
-      KONG_PG_HOST: postgres           # Docker service name
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001  # Admin API accessible on all interfaces
+steps:
+  - name: Start Kong services with docker-compose
+    run: docker compose up -d
+    
+  - name: Wait for Kong to be ready
+    run: |
+      # Waits up to 2 minutes for Kong Admin API and Manager UI
+      for i in {1..60}; do
+        curl -f http://localhost:8001/status && break
+        sleep 2
+      done
+      
+  - name: Run Playwright tests
+    run: npx playwright test --project=chromium
+    
+  - name: Cleanup
+    if: always()
+    run: docker compose down -v
 ```
 
-**Single Worker Guarantee:** The workflow runs with the `workers: 1` setting from `playwright.config.ts`, ensuring reliable test execution without race conditions or cleanup conflicts (see **Limitation: Single Service, Single Worker** above).
+**Why Docker Compose instead of Service Containers?**
 
-**Artifact Retention:** Test reports are retained for 30 days and can be downloaded from the GitHub Actions run details.
+- ✅ Uses the same `docker-compose.yml` as local development
+- ✅ Automatic database bootstrapping (configured in compose file)
+- ✅ No network configuration issues
+- ✅ Consistent behavior between local and CI environments
+
+**Single Worker + Single Browser:** The workflow runs with:
+- `workers: 1` from `playwright.config.ts` — Ensures serial test execution
+- `--project=chromium` flag — Runs only on Chromium browser to speed up CI
+
+This guarantees reliable test execution without race conditions or cleanup conflicts (see **Limitation: Single Service, Single Worker** above).
+
+**Artifact Retention:** Both test reports and results are retained for 30 days and can be downloaded from GitHub Actions run details.
 
 ## 🚧 Future Enhancements
 
