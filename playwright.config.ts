@@ -6,10 +6,10 @@ import * as dotenv from 'dotenv';
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true, 
+  fullyParallel: false, 
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 1,
-  workers: process.env.CI ? 1 : 1, 
+  workers: 1,
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],

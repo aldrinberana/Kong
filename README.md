@@ -145,7 +145,7 @@ Key settings:
 {
   testDir: './tests',
   fullyParallel: false,           // Tests in a file run sequentially
-  workers: 1,                     // Number of parallel workers (change to 4+ for parallelism)
+  workers: 1,                     // Single worker (see limitation below)
   use: {
     baseURL: 'http://localhost:8002',  // Kong Manager URL
     headless: false,                   // Set to true for CI
@@ -161,6 +161,21 @@ Key settings:
   globalTeardown: 'utils/global-teardown.ts',
 }
 ```
+
+### ⚠️ Limitation: Single Service, Single Worker
+
+**Current Configuration:** This test suite uses a **single shared Kong service instance** across all tests. Due to this shared service model, parallel execution is **not recommended** for the following reasons:
+
+- **Shared Service State:** Multiple workers cannot safely modify the same Kong service instance simultaneously
+- **Cleanup Dependencies:** Each test requires complete cleanup of services and routes before the next test starts
+- **Race Conditions:** Concurrent tests may create/delete entities during cleanup, causing failures
+
+**Current Setup:** `workers: 1` ensures tests run sequentially with guaranteed cleanup between each test.
+
+**Future Enhancement Options:**
+1. **Per-Worker Service Instances** — Deploy separate Kong services for each worker (requires Docker Compose scaling)
+2. **Run-Scoped Entity Names** — Use unique prefixes per test run to isolate entities in parallel execution
+3. **API-First Setup** — Create isolated test data via Admin API before UI tests
 
 ### Environment Variables (`.env`)
 
@@ -242,17 +257,24 @@ Adjust per your Kong response times.
 
 ## ⚡ Running in Parallel (Multiple Workers)
 
-For safe parallel execution without entity collisions:
+⚠️ **Currently Not Recommended** — See **Limitation: Single Service, Single Worker** above.
+
+The test suite is configured for **single-worker serial execution** to avoid race conditions and ensure reliable cleanup. If you attempt to run with multiple workers:
 
 ```bash
-npx playwright test --workers=4 --headed
+# NOT RECOMMENDED with current setup
+npx playwright test --workers=4
 ```
 
-Each test's `beforeEach` and `afterEach` hooks run cleanup with timeouts, ensuring the cluster
-stays clean even when multiple tests run concurrently.
+Tests may fail due to:
+- Multiple workers trying to clean/modify the same service simultaneously
+- Entity deletion failures mid-test
+- Race conditions between cleanup and test execution
 
-**Note:** The current cleanup filters by name prefixes (`svc-`, `rt-`, `playwright-`).  
-For production multi-tenant scenarios, consider scoping by a run ID (see **Future Enhancements** below).
+**To enable parallel execution**, you would need to:
+1. Deploy per-worker Kong service instances (Docker Compose scaling)
+2. Implement run-scoped entity naming (e.g., `svc-run-12345-service1`)
+3. Or separate services via environment variable configuration per worker
 
 ## 🏃 Common Commands
 
@@ -294,44 +316,46 @@ npx playwright test --reporter=@web/test-runner
 
 ## 🔐 CI/CD Integration
 
-### GitHub Actions Example
+### Playwright GitHub Workflow (`.github/workflows/playwright.yml`)
 
-Create `.github/workflows/e2e.yml`:
+This repository includes an automated GitHub Actions workflow that runs Playwright tests on every push and pull request.
+
+**What it does:**
+
+1. **Triggers:** Runs on push/pull request to `main` or `master` branches
+2. **Services:** Spins up containerized dependencies:
+   - **PostgreSQL** — Kong's database backend
+   - **Kong Gateway** — The service under test (with Postgres connection)
+3. **Test Execution:**
+   - Installs dependencies (`npm ci`)
+   - Installs Playwright browsers (`npx playwright install --with-deps`)
+   - Runs all tests respecting `playwright.config.ts` settings (single worker, serial execution)
+4. **Artifacts:** Uploads test report to GitHub (retained for 30 days)
+
+**Workflow File Location:** [`.github/workflows/playwright.yml`](.github/workflows/playwright.yml)
+
+**Key Configuration:**
 
 ```yaml
-name: E2E Tests
+services:
+  postgres:
+    image: postgres                    # Kong database
+    env:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong
+      KONG_DB: kong
 
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    services:
-      kong:
-        image: kong/kong-gateway:latest
-        ports:
-          - 8001:8001
-          - 8002:8002
-        env:
-          KONG_DATABASE: off
-          KONG_PROXY_ACCESS_LOG: /dev/null
-          KONG_ADMIN_ACCESS_LOG: /dev/null
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - run: npm ci
-      - run: npx playwright install --with-deps
-      - run: npm test -- --reporter=github
-      - uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report/
+  kong:
+    image: kong/kong-gateway           # Kong service under test
+    env:
+      KONG_DATABASE: postgres          # Use Postgres (not in-memory)
+      KONG_PG_HOST: postgres           # Docker service name
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001  # Admin API accessible on all interfaces
 ```
+
+**Single Worker Guarantee:** The workflow runs with the `workers: 1` setting from `playwright.config.ts`, ensuring reliable test execution without race conditions or cleanup conflicts (see **Limitation: Single Service, Single Worker** above).
+
+**Artifact Retention:** Test reports are retained for 30 days and can be downloaded from the GitHub Actions run details.
 
 ## 🚧 Future Enhancements
 
