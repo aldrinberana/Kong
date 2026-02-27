@@ -43,6 +43,18 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
+    - name: Wait for Kong
+      run: |
+        for i in {1..30}; do
+          if curl -s http://127.0.0.1:8001 > /dev/null; then
+            echo "Kong is ready"
+            exit 0
+          fi
+          echo "Waiting for Kong..."
+          sleep 2
+        done
+        echo "Kong failed to start"
+        exit 1
     - name: Run Playwright tests
       run: npx playwright test
     - uses: actions/upload-artifact@v4
@@ -51,15 +63,3 @@ jobs:
         name: playwright-report
         path: playwright-report/
         retention-days: 30
-        - name: Wait for Kong
-  run: |
-    for i in {1..30}; do
-      if curl -s http://127.0.0.1:8001 > /dev/null; then
-        echo "Kong is ready"
-        exit 0
-      fi
-      echo "Waiting for Kong..."
-      sleep 2
-    done
-    echo "Kong failed to start"
-    exit 1
