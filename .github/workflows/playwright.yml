@@ -48,10 +48,34 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
+    - name: Install system dependencies
+      run: apt-get update && apt-get install -y postgresql-client curl
     - name: Install dependencies
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
+    - name: Bootstrap Kong Database
+      run: |
+        echo "Waiting for PostgreSQL to be ready..."
+        for i in {1..30}; do
+          if pg_isready -h localhost -U kong > /dev/null 2>&1; then
+            echo "PostgreSQL is ready"
+            break
+          fi
+          echo "Waiting for PostgreSQL... ($i/30)"
+          sleep 2
+        done
+        
+        echo "Bootstrapping Kong database..."
+        docker run --rm \
+          --network host \
+          -e KONG_DATABASE=postgres \
+          -e KONG_PG_HOST=localhost \
+          -e KONG_PG_USER=kong \
+          -e KONG_PG_PASSWORD=kong \
+          -e KONG_PG_DB=kong \
+          kong/kong-gateway:latest \
+          kong migrations bootstrap
     - name: Wait for Kong
       run: |
         echo "Waiting for Kong Admin API..."
