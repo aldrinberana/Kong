@@ -8,102 +8,57 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_USER: kong
-          POSTGRES_PASSWORD: kong
-          POSTGRES_DB: kong
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U kong"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
-
-      kong:
-        image: kong/kong-gateway
-        env:
-          KONG_DATABASE: postgres
-          KONG_PG_HOST: postgres
-          KONG_PG_USER: kong
-          KONG_PG_PASSWORD: kong
-          KONG_ADMIN_LISTEN: 0.0.0.0:8001
-          KONG_ADMIN_GUI: 'on'
-          KONG_ADMIN_GUI_URL: http://localhost:8002
-        ports:
-          - 8001:8001
-          - 8000:8000
-          - 8002:8002
-          - 8443:8443
-        options: >-
-          --health-cmd="curl -f http://localhost:8001/status || exit 1"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
-    - name: Install system dependencies
-      run: apt-get update && apt-get install -y postgresql-client curl
-    - name: Install dependencies
-      run: npm ci
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-    - name: Bootstrap Kong Database
-      run: |
-        echo "Waiting for PostgreSQL to be ready..."
-        for i in {1..30}; do
-          if pg_isready -h localhost -U kong > /dev/null 2>&1; then
-            echo "PostgreSQL is ready"
-            break
-          fi
-          echo "Waiting for PostgreSQL... ($i/30)"
-          sleep 2
-        done
-        
-        echo "Bootstrapping Kong database..."
-        docker run --rm \
-          --network host \
-          -e KONG_DATABASE=postgres \
-          -e KONG_PG_HOST=localhost \
-          -e KONG_PG_USER=kong \
-          -e KONG_PG_PASSWORD=kong \
-          -e KONG_PG_DB=kong \
-          kong/kong-gateway:latest \
-          kong migrations bootstrap
-    - name: Wait for Kong
+    - name: Start Kong services with docker-compose
+      run: docker-compose up -d
+    - name: Wait for Kong to be ready
       run: |
         echo "Waiting for Kong Admin API..."
-        for i in {1..30}; do
-          if curl -f http://127.0.0.1:8001/status > /dev/null 2>&1; then
+        for i in {1..60}; do
+          if curl -f http://localhost:8001/status > /dev/null 2>&1; then
             echo "Kong Admin API is ready"
             break
           fi
-          echo "Waiting for Kong Admin API... ($i/30)"
+          echo "Waiting for Kong Admin API... ($i/60)"
           sleep 2
         done
         
         echo "Waiting for Kong Manager UI..."
-        for i in {1..30}; do
-          if curl -f http://127.0.0.1:8002 > /dev/null 2>&1; then
+        for i in {1..60}; do
+          if curl -f http://localhost:8002 > /dev/null 2>&1; then
             echo "Kong Manager UI is ready"
             exit 0
           fi
-          echo "Waiting for Kong Manager UI... ($i/30)"
+          echo "Waiting for Kong Manager UI... ($i/60)"
           sleep 2
         done
-        echo "Kong failed to start"
+        echo "Kong Manager UI failed to start"
+        docker-compose logs kong
         exit 1
+    - name: Install dependencies
+      run: npm ci
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
     - name: Run Playwright tests
       run: npx playwright test
-    - uses: actions/upload-artifact@v4
+    - name: Upload test report
+      uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
         name: playwright-report
         path: playwright-report/
         retention-days: 30
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: test-results
+        path: test-results/
+        retention-days: 30
+    - name: Cleanup
+      if: always()
+      run: docker-compose down -v
